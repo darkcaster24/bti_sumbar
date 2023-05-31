@@ -4,24 +4,33 @@ const multer = require('multer');
 const xlsx = require('xlsx');
 const ejs = require('ejs');
 const bodyParser = require('body-parser');
+const admin = require('firebase-admin');
 
 const app = express();
 const fs = require('fs');
+const serviceAccount = require('./bti-sumbar-firebase.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  storageBucket: 'bti-sumbar.appspot.com/', // Firebase Storage bucket name
+});
+
+const bucket = admin.storage().bucket();
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Mengatur penyimpanan file menggunakan multer
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
-    cb(null, file.originalname);
-  },
-});
-
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     cb(null, 'uploads/');
+//   },
+//   filename: function (req, file, cb) {
+//     cb(null, file.originalname);
+//   },
+// });
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // Pengaturan tampilan mesin render
@@ -32,14 +41,42 @@ app.get('/', function (req, res) {
   res.render('upload');
 });
 
+// // Menangani unggahan file Excel
+// app.post('/upload', upload.single('excelFile'), function (req, res) {
+//   const file = req.file;
+//   const workbook = xlsx.readFile(file.path);
+//   const sheet = workbook.Sheets[workbook.SheetNames[0]];
+//   const data = xlsx.utils.sheet_to_json(sheet);
+
+//   res.render('calculate', { data });
+// });
+
 // Menangani unggahan file Excel
 app.post('/upload', upload.single('excelFile'), function (req, res) {
   const file = req.file;
-  const workbook = xlsx.readFile(file.path);
+  const workbook = xlsx.read(file.buffer, { type: 'buffer' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const data = xlsx.utils.sheet_to_json(sheet);
 
-  res.render('calculate', { data });
+  const fileName = file.originalname;
+  const fileUpload = bucket.file(fileName);
+  const stream = fileUpload.createWriteStream({
+    metadata: {
+      contentType: file.mimetype,
+    },
+  });
+
+  stream.on('error', (err) => {
+    console.error('Error uploading file:', err);
+    res.status(500).send('Error uploading file');
+  });
+
+  stream.on('finish', () => {
+    const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    res.render('calculate', { data, fileUrl });
+  });
+
+  stream.end(file.buffer);
 });
 
 // Menampilkan hasil perhitungan berdasarkan nama
@@ -74,7 +111,6 @@ app.post('/result', function (req, res) {
     const absensi = person['Potongan Absensi']
     const potongan = bpjs_kes + bpjs_ket + pph_21 + hp_cicilan + absensi;
     const payout = gaji_komisi - potongan;
-    // const gajiAkhir = gaji - potongan + tunjangan;
     
     
     // Tampilkan hasil perhitungan pada halaman hasil

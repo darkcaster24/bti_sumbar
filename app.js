@@ -54,6 +54,9 @@ app.get('/', function (req, res) {
 // Menangani unggahan file Excel
 app.post('/upload', upload.single('excelFile'), function (req, res) {
   const file = req.file;
+  const {dataOption} = req.body;
+  console.log(dataOption);
+
   const workbook = xlsx.read(file.buffer, { type: 'buffer' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const data = xlsx.utils.sheet_to_json(sheet);
@@ -73,7 +76,13 @@ app.post('/upload', upload.single('excelFile'), function (req, res) {
 
   stream.on('finish', () => {
     const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    res.render('calculate', { data, fileUrl });
+
+    if(dataOption=='slipGaji'){
+      res.render('calculate', { data, fileUrl });
+    }
+    if(dataOption=='jaminan'){
+      res.render('cariJaminan', { data, fileUrl });
+    }
   });
 
   stream.end(file.buffer);
@@ -119,6 +128,31 @@ app.post('/result', function (req, res) {
       hp_cicilan, absensi, potongan, payout});
   } else {
     res.render('result', { error: 'Nama tidak ditemukan' });
+  }
+});
+
+// Menampilkan hasil perhitungan berdasarkan nama
+app.post('/showJaminan', function (req, res) {
+  console.log(req.body);
+  const name = req.body.name;
+  const data = JSON.parse(req.body.data);
+  
+  // Cari data berdasarkan nama yang dimasukkan
+  const person = data.find((item) => item.Nama === name);
+  
+  if (person) {
+    // Lakukan perhitungan gaji akhir
+    
+    const jabatan = person['Jabatan'];
+    const no_ijazah = person['NO Ijazah'];
+    const no_bpkb = person['No BPKB'];
+    
+    
+    
+    // Tampilkan hasil perhitungan pada halaman hasil
+    res.render('showJaminan', { name,jabatan, no_ijazah, no_bpkb});
+  } else {
+    res.render('showJaminan', { error: 'Nama tidak ditemukan' });
   }
 });
 
